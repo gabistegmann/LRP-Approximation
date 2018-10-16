@@ -1,2 +1,2 @@
 # LRP-Approximation
-LRP is slow. A way to get around it is by skipping the fitting of each model. Extract random coefficients of mixed-effects model, fit a EFA or PCA. Create tree based on the scores. CART, CTREE, or EVTREE.
+LRP is highly computationally intensive due to fitting mixed-effects models repeatedly. A way to get around it is by skipping the fitting of each model. Extract random coefficients of mixed-effects model, fit a EFA or PCA. Create tree based on the scores. CART, CTREE, or EVTREE. Once individuals have been assigned to their terminal nodes (based on their EFA or PCA scores), fit a mixed-effects model to the terminal nodes.
