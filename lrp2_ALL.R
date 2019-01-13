@@ -1,6 +1,6 @@
-lrp2_ALL = function (method, nlme.model = NULL, mvpartParams = NULL, 
+lrp2_ALL = function (method, nlme.model = NULL, mvpartParams = NULL, FA = NULL,
                      data, start, group, rPartFormula, weight = NULL, R = NULL,
-                     control.rp = rpart.control(cp = .01, xval = 10, minsplit = 17),
+                     control.rp = rpart.control(cp = .01, xval = 10, minsplit = 33),
                      control.ct = ctree_control(minprob = 0.01),
                      control.et = evtree.control()) 
 {
@@ -32,36 +32,32 @@ lrp2_ALL = function (method, nlme.model = NULL, mvpartParams = NULL,
   model = list()
   
   model$NLME = NLMEmodel
+
+  ######
+  # FA #
+  ######
   
-  #######
-  # EFA #
-  #######
+  FA.fit <- suppressWarnings(lavaan(model=FA, data = rand.coeffs))
   
-  EFA.fit <- fa(r = stdd.rand.coef,
-                nfactors = 1, fm = "ml")
-  
-  EFA.scores = as.data.frame(factor.scores(stdd.rand.coef, 
-                                           EFA.fit, 
-                                           method = "Thurstone")$scores)
+  EFA.scores = suppressWarnings(as.data.frame(lavPredict(FA.fit)))
   
   
   colnames(EFA.scores) = c("EFA.scores")
   
-  EFA.scores$id = rownames(EFA.scores)
+  EFA.scores$id = data.2$id
   
   # Merge EFA and data
   data.3 = merge(data.2, EFA.scores, by = "id")
   
- 
+  
   #CART
-
+  
   model$EFA.rpart = list()
   
-
-  model.rpart.1 = rpart(as.formula(paste("EFA.scores",
-                                       rPartFormula)), 
-                      data = data.3, 
-                      control = control.rp)
+  
+  model.rpart.1 = rpart(as.formula(paste("EFA.scores~", paste(rPartFormula))[2]), 
+                        data = data.3, 
+                        control = control.rp)
   
   minCP = model.rpart.1$cptable[which.min(model.rpart.1$cptable[,4]),1]
   
@@ -93,12 +89,11 @@ lrp2_ALL = function (method, nlme.model = NULL, mvpartParams = NULL,
     
   }
   model$EFA.rpart$summary <- summary
-  model$EFA.rpart$fixed_effects <- coeffs
-
+  model$EFA.rpart$fixed_effects <- summary
+  
   
   #CTREE
-  model.ctree = ctree(as.formula(paste("EFA.scores",
-                                       rPartFormula)), 
+  model.ctree = ctree(as.formula(paste("EFA.scores~", paste(rPartFormula))[2]), 
                       data = data.3, 
                       control = control.ct)
   
@@ -111,7 +106,7 @@ lrp2_ALL = function (method, nlme.model = NULL, mvpartParams = NULL,
   for (j in 1:length(model.ctree)) {
     
     if(j %in% nodeids(model.ctree, terminal = TRUE)){
-      coef.node =rand.coeffs[rownames(model.ctree[j]$data),]
+      coef.node =rand.coeffs[as.numeric(rownames(model.ctree[j]$data)),]
       
       coeffs=NLMEmodel$coefficients$fixed
       
@@ -134,8 +129,7 @@ lrp2_ALL = function (method, nlme.model = NULL, mvpartParams = NULL,
   
   model$EFA.evtree = list()
   
-  model.evtree = evtree(as.formula(paste("EFA.scores",
-                                         rPartFormula)), 
+  model.evtree = evtree(as.formula(paste("EFA.scores~", paste(rPartFormula))[2]), 
                         data = data.3, 
                         control = control.et)
   
@@ -148,7 +142,7 @@ lrp2_ALL = function (method, nlme.model = NULL, mvpartParams = NULL,
   for (j in 1:length(model.evtree)) {
     
     if(j %in% nodeids(model.evtree, terminal = TRUE)){
-      coef.node =rand.coeffs[rownames(model.evtree[j]$data),]
+      coef.node =rand.coeffs[as.numeric(rownames(model.evtree[j]$data)),]
       
       coeffs=NLMEmodel$coefficients$fixed
       
@@ -164,6 +158,122 @@ lrp2_ALL = function (method, nlme.model = NULL, mvpartParams = NULL,
     
   }
   model$EFA.evtree$summary <- summary
+  
+  
+  #############
+  # MIKE SUMS #
+  #############
+  
+  data.3$MikeSums = rowSums(stdd.rand.coef)
+  
+  #CART
+  
+  model$MikeSums.rpart = list()
+  
+  
+  model.rpart.1 = rpart(as.formula(paste("MikeSums~", paste(rPartFormula))[2]), 
+                        data = data.3, 
+                        control = control.rp)
+  
+  minCP = model.rpart.1$cptable[which.min(model.rpart.1$cptable[,4]),1]
+  
+  model.rpart = prune.rpart(model.rpart.1, cp = minCP)
+  
+  model$MikeSums.rpart$rpart_out <- model.rpart
+  
+  
+  model$MikeSums.rpart$leaf_node <- model.rpart$where
+  summary = list()
+  
+  for (j in 1:length(table(model.rpart$where))) {
+    
+    
+    
+    id <- names(table(model.rpart$where))[j] == model.rpart$where
+    
+    
+    coeffs=NLMEmodel$coefficients$fixed
+    
+    nparams = length(coeffs)
+    
+    for(beta in 1:nparams){
+      coeffs[beta]   =   NLMEmodel$coefficients$fixed[[beta]] + mean(rand.coeffs[id, beta])
+    }
+    
+    
+    summary[[as.numeric(names(table(model.rpart$where)))[j]]] <- coeffs
+    
+  }
+  model$MikeSums.rpart$summary <- summary
+  model$MikeSums.rpart$fixed_effects <- summary
+  
+  
+  #CTREE
+  model.ctree = ctree(as.formula(paste("MikeSums~", paste(rPartFormula))[2]), 
+                      data = data.3, 
+                      control = control.ct)
+  
+  
+  model$MikeSums.ctree$ctree_out <- model.ctree
+  
+  
+  summary = list()
+  
+  for (j in 1:length(model.ctree)) {
+    
+    if(j %in% nodeids(model.ctree, terminal = TRUE)){
+      coef.node =rand.coeffs[as.numeric(rownames(model.ctree[j]$data)),]
+      
+      coeffs=NLMEmodel$coefficients$fixed
+      
+      nparams = length(coeffs)
+      
+      for(beta in 1:nparams){
+        coeffs[beta]   =   NLMEmodel$coefficients$fixed[[beta]] + mean(coef.node[, beta])
+      }
+      
+      
+      summary[[j]] <- coeffs
+    }
+    
+  }
+  model$MikeSums.ctree$summary <- summary
+  
+  
+  
+  #EVTREE
+  
+  model$MikeSums.evtree = list()
+  
+  model.evtree = evtree(as.formula(paste("MikeSums~", paste(rPartFormula))[2]), 
+                        data = data.3, 
+                        control = control.et)
+  
+  
+  model$MikeSums.evtree$evtree_out <- model.evtree
+  
+  
+  summary = list()
+  
+  for (j in 1:length(model.evtree)) {
+    
+    if(j %in% nodeids(model.evtree, terminal = TRUE)){
+      coef.node =rand.coeffs[as.numeric(rownames(model.evtree[j]$data)),]
+      
+      coeffs=NLMEmodel$coefficients$fixed
+      
+      nparams = length(coeffs)
+      
+      for(beta in 1:nparams){
+        coeffs[beta]   =   NLMEmodel$coefficients$fixed[[beta]] + mean(coef.node[, beta])
+      }
+      
+      
+      summary[[j]] <- coeffs
+    }
+    
+  }
+  model$MikeSums.evtree$summary <- summary
   
   
   #######
@@ -184,8 +294,7 @@ lrp2_ALL = function (method, nlme.model = NULL, mvpartParams = NULL,
   #CART
   model$PCA.rpart = list()
   
-  model.rpart.1 = rpart(as.formula(paste("PC.scores",
-                                         rPartFormula)), 
+  model.rpart.1 = rpart(as.formula(paste("PC.scores~", paste(rPartFormula))[2]), 
                         data = data.3, 
                         control = control.rp)
   
@@ -224,8 +333,7 @@ lrp2_ALL = function (method, nlme.model = NULL, mvpartParams = NULL,
   #CTREE
   model$PCA.ctree = list()
   
-  model.ctree = ctree(as.formula(paste("PC.scores",
-                                       rPartFormula)), 
+  model.ctree = ctree(as.formula(paste("PC.scores~", paste(rPartFormula))[2]), 
                       data = data.3, 
                       control = control.ct)
   
@@ -239,7 +347,7 @@ lrp2_ALL = function (method, nlme.model = NULL, mvpartParams = NULL,
   for (j in 1:length(model.ctree)) {
     
     if(j %in% nodeids(model.ctree, terminal = TRUE)){
-      coef.node =rand.coeffs[rownames(model.ctree[j]$data),]
+      coef.node =rand.coeffs[as.numeric(rownames(model.ctree[j]$data)),]
       
       coeffs=NLMEmodel$coefficients$fixed
       
@@ -261,8 +369,7 @@ lrp2_ALL = function (method, nlme.model = NULL, mvpartParams = NULL,
   
   model$PCA.evtree = list()
   
-  model.evtree = evtree(as.formula(paste("PC.scores",
-                                         rPartFormula)), 
+  model.evtree = evtree(as.formula(paste("PC.scores~", paste(rPartFormula))[2]), 
                         data = data.3, 
                         control = control.et)
   
@@ -276,7 +383,7 @@ lrp2_ALL = function (method, nlme.model = NULL, mvpartParams = NULL,
   for (j in 1:length(model.evtree)) {
     
     if(j %in% nodeids(model.evtree, terminal = TRUE)){
-      coef.node =rand.coeffs[rownames(model.evtree[j]$data),]
+      coef.node =rand.coeffs[as.numeric(rownames(model.evtree[j]$data)),]
       
       coeffs=NLMEmodel$coefficients$fixed
       
@@ -295,5 +402,5 @@ lrp2_ALL = function (method, nlme.model = NULL, mvpartParams = NULL,
   
   model$EFA.PCA.cor = abs(cor(EFA.scores$EFA.scores, PC.scores$PC.scores))
   
-    return(model)
+  return(model)
 }
